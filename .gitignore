@@ -1,0 +1,15 @@
+.venv/
+.cache/
+__pycache__/
+*.pyc
+.DS_Store
+data/raw/
+data/*.csv
+*.zip
+*.pdf
+results/run_log.txt
+results/preprocessing_reproduction.json
+results/window_accuracy.csv
+figures/confusion8.png
+figures/cv_accuracy.png
+figures/window_diagnosis.png

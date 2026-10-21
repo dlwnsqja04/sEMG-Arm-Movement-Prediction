@@ -1,0 +1,9 @@
+﻿actual / predicted,30_fist,30_open,30_pronation,30_supination,60_fist,60_open,60_pronation,60_supination
+30_fist,614,45,42,15,112,26,25,33
+30_open,30,621,45,34,22,93,39,28
+30_pronation,17,40,610,35,42,20,98,50
+30_supination,13,53,82,560,35,37,45,87
+60_fist,78,46,57,58,540,44,52,37
+60_open,25,118,21,42,34,561,72,39
+60_pronation,22,45,96,25,49,48,554,73
+60_supination,29,56,38,87,30,49,58,565

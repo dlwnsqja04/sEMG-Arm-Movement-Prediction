@@ -1,0 +1,14 @@
+{
+  "holdout_metrics_from_predictions": true,
+  "all_confusion_cells_match": true,
+  "shared_holdout_trial_ids": 0,
+  "cv_trial_overlap": 0,
+  "fold_scaler_train_only": true,
+  "cv_scores_from_predictions": true,
+  "paired_t_from_difference_vector": true,
+  "dataset_sha256_match": true,
+  "models": 3,
+  "cv_fits": 15,
+  "holdout_fits": 3,
+  "zip_files": 0
+}
