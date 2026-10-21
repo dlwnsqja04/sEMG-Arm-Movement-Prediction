@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from analysis import analyze_matrix, read_results
+from analysis import analyze_matrix, p_text, read_results, test_interpretation
 from data import ROOT
 
 
@@ -118,7 +118,7 @@ def write_readme() -> None:
         "세 모델을 동일한 테스트셋에서 평가한 결과다. 값은 0~1 범위로 표시했으며, 예를 들어 Accuracy 0.6490은 약 64.90%를 의미한다.",
         markdown_table(["Model", "Accuracy", "Precision", "Recall", "F1-score"],
                        [[model.name, *(f"{value:.4f}" for value in (model.scores.accuracy, model.scores.precision, model.scores.recall, model.scores.f1))] for model in result.models]),
-        f"테스트 {test_windows:,}개 윈도우를 기준으로 계산했다. Precision·Recall·F1-score는 8개 클래스의 값을 동일한 비중으로 평균한 macro 지표다.",
+        f"테스트 {test_windows:,}개 윈도우를 기준으로 계산했다. Precision·Recall·F1-score는 8개 클래스의 값을 동일한 비중으로 평균한 macro 지표다. Macro 평균은 이번 실습에서 선택한 평가 방식이다.",
         markdown_table(["평가 지표", "계산 및 확인할 내용"], [
             ["Accuracy", "전체 테스트 창 중 클래스를 정확히 맞힌 비율"],
             ["Precision", "특정 클래스로 예측한 창 중 실제로 그 클래스인 비율을 클래스별로 계산한 뒤 평균"],
@@ -132,7 +132,32 @@ def write_readme() -> None:
         "**XGBoost:** SVM보다 전반적인 성능이 높았지만, 이번 고정 설정에서는 RF보다 낮았다. 다만 RF가 모든 클래스에서 XGBoost보다 높은 것은 아니며, `30_pronation`에서는 XGBoost의 정답 수가 더 많았다. 전체 평균 순위와 개별 클래스의 순위가 다를 수 있음을 보여준다.",
         "**SVM:** 이번 비교에서 정확도와 macro F1이 가장 낮았다. RBF 커널을 사용했지만 현재의 특징과 고정한 C·gamma 조건으로는 클래스 간 겹침을 충분히 구분하지 못했을 가능성이 있다. 이 결과만으로 SVM 자체가 항상 부적합하다고 볼 수는 없으며, 입력 특징과 설정에 따라 성능은 달라질 수 있다.",
         "학습셋 내부 5-fold 교차검증의 macro F1 평균은 " + ", ".join(f"{item.name} {item.f1_mean:.4f}" for item in result.cv) + f"였다. 교차검증에서 선택된 모델은 {result.selected}였고, 고정한 테스트셋에서도 가장 높은 성능을 보였다. 여기서 확인한 것은 이번 분할과 설정에서의 점수 차이이며, 더 복잡한 모델을 쓰는 것만으로 성능이 높아지는 것은 아니었다.",
+        "### 5-fold 교차검증 결과",
+        "다음은 학습셋 내부의 동일한 다섯 검증 폴드에서 얻은 정확도다. 각 시행의 창 19개는 한 폴드에 함께 배치했다. 테스트셋은 이 교차검증에 사용하지 않았다.",
+        markdown_table(["Fold", *(model.name + " Accuracy" for model in result.models)], [
+            [str(number), *(f"{next(fold.accuracy for fold in result.folds if fold.name == model.name and fold.number == number) * 100:.2f}%" for model in result.models)] for number in range(1, 6)
+        ]),
+        markdown_table(["모델", "Accuracy 평균 ± 표준편차 (%)", "Macro F1 평균 ± 표준편차"], [
+            [item.name, f"{item.accuracy_mean * 100:.2f} ± {item.accuracy_std * 100:.2f}", f"{item.f1_mean:.4f} ± {item.f1_std:.4f}"] for item in result.cv
+        ]),
+        "표준편차는 강의 실습과 같은 `np.std` 기본 설정(ddof=0)으로 계산했다. 정확도의 ± 값은 퍼센트 단위에서 구한 표준편차다. 폴드별 Precision·Recall·F1과 시행 수까지 포함한 원래 값은 `results/cv_folds.csv`에 저장했다.",
+        "RF가 평균 정확도와 macro F1에서 가장 높았다. XGBoost는 정확도의 폴드 간 표준편차가 가장 작았지만, 평균 정확도는 RF보다 낮았다. 최종 모델 선택 기준은 macro F1 평균이며, 표준편차는 폴드 간 성능 변동을 확인하는 데 사용했다.",
+        "### 대응표본 t-검정",
+        "동일한 폴드에서 나온 두 모델의 정확도를 짝지어 대응표본 t-검정을 수행했다. 다섯 쌍의 차이를 사용하므로 자유도는 4이며, 유의수준은 0.05다. 평균 정확도 차이는 표의 앞 모델에서 뒤 모델을 뺀 값으로, 음수이면 뒤 모델의 평균 정확도가 더 높다는 뜻이다.",
+        markdown_table(["비교", "평균 정확도 차이 (%p)", "t (df=4)", "p-value", "Holm 보정 p-value"], [
+            [f"{test.model_a} − {test.model_b}", f"{test.mean_difference * 100:+.2f}", "검정 불가" if test.t_statistic is None else f"{test.t_statistic:.4f}", p_text(test.p_value), p_text(test.holm_p)] for test in result.tests
+        ]),
+        "\n".join(f"- **{test.model_a}와 {test.model_b}:** {test_interpretation(test)} 평균 차이는 {test.mean_difference * 100:+.2f}%p다." for test in result.tests),
+        "세 쌍 모두 원 p값과 추가로 계산한 Holm 보정 p값이 0.05 미만이었다. 이번 다섯 폴드에서는 모델 간 평균 정확도 차이가 검출됐다는 뜻이다. p값이 0.05 이상인 경우에도 차이를 검출하지 못했다는 뜻이지 두 모델이 동등하다는 증거는 아니다. 또한 교차검증의 학습셋은 서로 겹치므로 이 p값을 독립된 반복 실험의 결과처럼 해석하지 않았다.",
+        "강의자료에서는 논문의 세 쌍 모두 유의한 차이가 검출되지 않았다고 소개했지만, 이번 실습에서는 결과가 달랐다. 강의자료의 RF 교차검증 정확도 96.72 ± 0.58%와 이번 63.13 ± 1.25%도 차이가 있다. 이번 전처리·구간 선택·특징 정의·시행 분할이 논문과 완전히 같은 조건인지 검증한 실험은 아니므로, 논문 수치를 그대로 재현했다고 결론내릴 수 없다. 조건별 영향을 분리한 실험도 수행하지 않아 차이의 원인을 한 가지로 단정하지 않았다.",
+        "### 계산 비용",
+        markdown_table(["모델", "학습 시간 (s)", "단건 추론 시간 (ms/window)"], [
+            [model.name, f"{model.train_seconds:.3f}", f"{model.inference_ms:.4f}"] for model in result.models
+        ]),
+        "학습 시간은 전체 학습셋 29,184개 창을 이용한 최종 Pipeline의 fit 한 번을 측정한 값이다. 단건 추론은 StandardScaler와 분류기를 모두 포함한 predict 호출을 10회 준비 실행한 뒤 100회 반복해 평균냈다. `time.perf_counter`를 사용했으며, 측정 환경은 macOS의 Apple Silicon(arm64), CPU 병렬 처리 설정 4개 스레드다.",
+        "이번 실행에서는 SVM의 학습이 가장 오래 걸렸고, 단건 추론은 RF가 가장 느리고 XGBoost가 가장 빨랐다. 작은 입력을 반복 호출하는 측정에는 호출과 병렬 처리의 오버헤드도 포함될 수 있다. 강의자료에 소개된 논문의 시간 순위와는 다르며, 이 장비와 호출 방식에서 얻은 시간을 실제 배포 환경의 지연 시간으로 일반화하지 않았다. 최종 선택은 macro F1을 우선해 RF로 유지했고, 단건 응답 시간이 중요하다면 XGBoost도 추가 검토할 수 있다.",
         "## 3. Confusion Matrix 분석",
+        f"최종 선택 모델 {selected.name}의 8클래스 혼동행렬은 강의 제출 파일명인 [`confusion8.png`](figures/confusion8.png)로도 저장했다. 아래 {selected.name} 항목에 이 파일을 표시했다.",
         "혼동행렬에서 **행은 실제 클래스, 열은 예측 클래스**다. 대각선은 정답 수이며, 대각선 밖의 값은 특정 실제 클래스를 다른 클래스로 예측한 횟수다. 각 행의 합은 912개이고, 아래에서 가장 잘·잘못 분류된 클래스는 행별 재현율을 기준으로 정했다.",
         "같은 동작의 각도만 틀린 오류와, 각도는 맞지만 동작을 틀린 오류를 구분해 확인했다. 예를 들어 `60_open → 30_open`은 각도만 틀린 경우이고, `30_supination → 30_pronation`은 손동작만 틀린 경우다.",
         markdown_table(["모델", "각도만 틀림", "손동작만 틀림", "둘 다 틀림", "전체 오분류"], [
@@ -149,7 +174,7 @@ def write_readme() -> None:
         reverse = int(model.cm[predicted, actual])
         lines.extend([
             f"### {model.name}",
-            f"![{model.name} Confusion Matrix](figures/confusion_{model.name}.png)",
+            f"![{model.name} Confusion Matrix](figures/{'confusion8' if model.name == selected.name else 'confusion_' + model.name}.png)",
             f"- **가장 잘 분류된 클래스:** {best_counts}를 맞혔으며, 재현율은 {analysis.best_recall * 100:.2f}%다. 해당 클래스도 모든 창을 맞힌 것은 아니므로 다른 클래스로 분산된 예측을 함께 확인했다.",
             f"- **가장 많이 오분류된 클래스:** {worst_counts}를 맞혔으며, 재현율은 {analysis.worst_recall * 100:.2f}%다. 클래스마다 {912 - int(model.cm[result.classes.index(analysis.worst[0]), result.classes.index(analysis.worst[0])]):,}개가 다른 클래스로 예측됐다.",
             f"- **주요 오분류 유형:** 실제 클래스 `{analysis.actual}`의 창을 다른 클래스 `{analysis.predicted}`에 속한다고 예측한 경우가 {analysis.count}개로, 실제 해당 클래스의 {analysis.count / int(model.cm[actual].sum()) * 100:.2f}%다. 반대 방향인 `{analysis.predicted} → {analysis.actual}`도 {reverse}개 발생했다. 손동작이 같아도 각도를 구분하는 과정에서 혼동이 생겼다.",
@@ -167,6 +192,12 @@ def write_readme() -> None:
         f"- **가장 성능이 낮은 모델:** {worst.name}. 정확도 {worst.scores.accuracy * 100:.2f}%, macro F1-score {worst.scores.f1:.4f}였다. 이번 고정 설정에서는 다른 두 모델에 비해 정답 예측 수가 적었고, 일부 클래스에서 재현율이 특히 낮았다. 모델 이름만으로 성능을 예상하기보다 동일한 조건에서 직접 비교해야 한다는 점을 확인했다.",
         f"- **주요 오분류 클래스:** 최종 선택 모델 {selected.name}에서는 `{major_error.actual} → {major_error.predicted}` 오류가 {major_error.count}개로 가장 빈번했다. 동일 손동작의 각도 구분이 어려운 경우가 남았으며, 전체 오류를 합치면 각도는 맞히고 손동작을 틀린 경우도 {selected.errors.gesture_only:,}개로 많았다. 따라서 특정 각도 쌍과 서로 다른 손동작의 혼동을 함께 개선할 필요가 있다.",
         "- **전체적인 실험 결과 및 느낀 점:** 같은 25차원 특징을 입력해도 모델의 분류 방식과 설정에 따라 성능 차이가 나타났다. 특히 겹치는 창을 시행 단위로 묶어 나누고, 표준화 통계를 학습 데이터에서만 계산하는 과정이 평가에 중요하다는 점을 확인했다. 정확도 하나만으로는 오류의 내용을 알기 어려웠지만, 혼동행렬과 클래스별 재현율을 함께 보니 취약한 동작·각도 조합을 구체적으로 파악할 수 있었다. 이후에는 학습셋 내부 교차검증에서 특징 조합, 창 길이, 모델 설정을 비교하고 시간 순서 정보를 반영하는 입력도 검토해 볼 수 있다. 다만 이 개선안의 효과는 아직 실험하지 않았으며, 위 표는 현재 고정한 조건에서 실제로 얻은 결과다.",
+        "### 실험의 한계 및 개선 방향",
+        "1. **Trial-wise 분할과 새 피험자 일반화:** 학습과 테스트의 시행 ID는 겹치지 않지만 같은 8명의 데이터가 양쪽에 들어 있다. 따라서 현재 결과는 처음 보는 사람에 대한 성능이 아니다. 피험자별 근활성 크기와 측정 특성을 공유했을 가능성이 있으며, 후속 검증에서는 7명으로 학습하고 남은 1명으로 평가하는 LOSO를 8명에 대해 반복할 필요가 있다.\n"
+        "2. **창과 교차검증 폴드의 독립성:** 같은 시행의 인접 창은 50% 겹치므로 7,296개 테스트 창을 서로 완전히 독립된 표본으로 볼 수 없다. 다섯 교차검증 폴드의 학습셋도 서로 겹친다. 시행 단위 분할은 겹친 창이 양쪽 집합에 들어가는 문제를 막지만, 창의 상관관계와 대응표본 t-검정의 독립성 제약까지 없애지는 않는다.\n"
+        "3. **데이터와 출력 범위:** 피험자 8명, 손동작 4종, 팔꿈치 각도 30°·60°의 측정 조건만 평가했다. 새로운 손동작, 다른 각도, 전극 위치나 착용 상태 변화에 대한 실험은 하지 않았다. 출력도 8개 범주 중 하나이며, 연속적인 팔꿈치 각도를 추정하는 회귀 모델은 아니다.\n"
+        "4. **고정한 전처리·특징·설정:** mark 이후 1.5~3.5초, 200 ms 창, 25개 시간영역 특징과 고정한 모델 설정을 사용했다. 시간 순서 정보와 다른 특징 조합, 임계값·창 길이·하이퍼파라미터 변화의 효과는 비교하지 않았다. 이런 조건의 비교는 테스트셋을 반복 참고하지 않고 학습셋 내부 교차검증에서 수행해야 한다.\n"
+        "5. **측정 환경에 따른 계산 비용:** 학습·추론 시간은 한 Mac의 CPU에서 측정한 값이다. 단건 호출과 배치 처리는 오버헤드 비중이 다르며, GPU·다른 CPU·실시간 신호 수집 환경에서 같은 시간이 나온다는 보장은 없다. 실제 적용 단계에서는 목표 장비와 입력 방식으로 지연 시간을 다시 측정해야 한다.",
     ])
     (ROOT / "README.md").write_text("\n\n".join(lines) + "\n", encoding="utf-8")
     print("지정한 4개 항목 양식으로 README 작성 완료", flush=True)
